@@ -6,6 +6,102 @@ import './App.css';
 const AXIOS_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 const AUTH_BASE_URL = AXIOS_BASE_URL.replace(/\/api\/v1\/?$/, '') + '/api/auth';
 const ACCESS_TOKEN_KEY = 'newsbrief_access_token';
+const REFRESH_TOKEN_KEY = 'newsbrief_refresh_token';
+
+const SOCIAL_CONFIG = {
+  google: {
+    clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
+    sdk: 'https://accounts.google.com/gsi/client',
+  },
+  apple: {
+    clientId: import.meta.env.VITE_APPLE_CLIENT_ID || '',
+    redirectURI: import.meta.env.VITE_APPLE_REDIRECT_URI || (typeof window !== 'undefined' ? window.location.origin : ''),
+    sdk: 'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js',
+  },
+  kakao: {
+    appKey: import.meta.env.VITE_KAKAO_APP_KEY || '',
+    sdk: 'https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js',
+  },
+};
+
+const loadedScripts = new Set();
+function loadScript(url) {
+  if (typeof document === 'undefined') return Promise.reject(new Error('NO_DOM'));
+  if (loadedScripts.has(url)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${url}"]`);
+    if (existing) { loadedScripts.add(url); return resolve(); }
+    const s = document.createElement('script');
+    s.src = url;
+    s.async = true;
+    s.defer = true;
+    s.onload = () => { loadedScripts.add(url); resolve(); };
+    s.onerror = () => reject(new Error(`SDK_LOAD_FAILED:${url}`));
+    document.head.appendChild(s);
+  });
+}
+
+async function getGoogleIdToken() {
+  const { clientId, sdk } = SOCIAL_CONFIG.google;
+  if (!clientId) throw new Error('VITE_GOOGLE_CLIENT_ID_MISSING');
+  await loadScript(sdk);
+  if (!window.google?.accounts?.id) throw new Error('GOOGLE_SDK_UNAVAILABLE');
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (fn, val) => { if (settled) return; settled = true; fn(val); };
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback: (response) => {
+        if (response?.credential) finish(resolve, response.credential);
+        else finish(reject, new Error('GOOGLE_NO_CREDENTIAL'));
+      },
+      cancel_on_tap_outside: true,
+    });
+    window.google.accounts.id.prompt((notification) => {
+      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        finish(reject, new Error('GOOGLE_PROMPT_DISMISSED'));
+      }
+    });
+  });
+}
+
+async function getAppleIdToken() {
+  const { clientId, redirectURI, sdk } = SOCIAL_CONFIG.apple;
+  if (!clientId) throw new Error('VITE_APPLE_CLIENT_ID_MISSING');
+  await loadScript(sdk);
+  if (!window.AppleID?.auth) throw new Error('APPLE_SDK_UNAVAILABLE');
+  window.AppleID.auth.init({ clientId, scope: 'name email', redirectURI, usePopup: true });
+  const result = await window.AppleID.auth.signIn();
+  const idToken = result?.authorization?.id_token;
+  if (!idToken) throw new Error('APPLE_NO_ID_TOKEN');
+  return idToken;
+}
+
+async function getKakaoIdToken() {
+  const { appKey, sdk } = SOCIAL_CONFIG.kakao;
+  if (!appKey) throw new Error('VITE_KAKAO_APP_KEY_MISSING');
+  await loadScript(sdk);
+  if (!window.Kakao) throw new Error('KAKAO_SDK_UNAVAILABLE');
+  if (!window.Kakao.isInitialized()) window.Kakao.init(appKey);
+  return new Promise((resolve, reject) => {
+    window.Kakao.Auth.login({
+      scope: 'openid profile_nickname account_email',
+      success: (resp) => {
+        const token = resp.id_token || resp.access_token;
+        if (token) resolve(token);
+        else reject(new Error('KAKAO_NO_TOKEN'));
+      },
+      fail: (err) => reject(new Error(`KAKAO_FAIL:${err?.error || 'unknown'}`)),
+    });
+  });
+}
+
+async function fetchProviderIdToken(provider) {
+  if (provider === 'google') return getGoogleIdToken();
+  if (provider === 'apple') return getAppleIdToken();
+  if (provider === 'kakao') return getKakaoIdToken();
+  throw new Error(`UNKNOWN_PROVIDER:${provider}`);
+}
 
 const apiClient = axios.create({
   baseURL: AXIOS_BASE_URL,
@@ -470,6 +566,13 @@ const api = {
     if (payload.token) localStorage.setItem(ACCESS_TOKEN_KEY, payload.token);
     return payload;
   },
+  async socialLogin(provider, idToken) {
+    const res = await apiClient.post('/auth/social', { provider, id_token: idToken });
+    const payload = res.data || {};
+    if (payload.access_token) localStorage.setItem(ACCESS_TOKEN_KEY, payload.access_token);
+    if (payload.refresh_token) localStorage.setItem(REFRESH_TOKEN_KEY, payload.refresh_token);
+    return payload;
+  },
 };
 
 function getMockArticles(country, category) {
@@ -758,8 +861,10 @@ function App() {
               if (user?.name) setProfile({ name: user.name, email: user.email || '', initial: String(user.name)[0] || '민' });
               setView('home');
             }}
-            onSignupSuccess={() => setView('step2')}
-            onSocial={() => setView('step2')}
+            onSignupSuccess={(user) => {
+              if (user?.name) setProfile({ name: user.name, email: user.email || '', initial: String(user.name)[0] || '민' });
+              setView('step2');
+            }}
           />
         )}
         {view === 'step2' && <CountryStep selectedCountries={selectedCountries} toggleCountry={toggleCountry} isAnyCountrySelected={isAnyCountrySelected} onPrev={() => setView('onboarding')} onNext={() => setView('step3')} />}
@@ -788,7 +893,17 @@ function mergeScraps(current, incoming) {
   return [...map.values()];
 }
 
-function OnboardingLogin({ onLoginSuccess, onSignupSuccess, onSocial }) {
+const SOCIAL_ERROR_MESSAGES = {
+  VITE_GOOGLE_CLIENT_ID_MISSING: 'Google 로그인 환경변수(VITE_GOOGLE_CLIENT_ID)가 설정되지 않았습니다.',
+  VITE_APPLE_CLIENT_ID_MISSING: 'Apple 로그인 환경변수(VITE_APPLE_CLIENT_ID)가 설정되지 않았습니다.',
+  VITE_KAKAO_APP_KEY_MISSING: 'Kakao 로그인 환경변수(VITE_KAKAO_APP_KEY)가 설정되지 않았습니다.',
+  GOOGLE_PROMPT_DISMISSED: 'Google 로그인 창이 닫혔습니다. 다시 시도해주세요.',
+  GOOGLE_NO_CREDENTIAL: 'Google에서 토큰을 받지 못했습니다.',
+  APPLE_NO_ID_TOKEN: 'Apple에서 id_token을 받지 못했습니다.',
+  KAKAO_NO_TOKEN: '카카오에서 토큰을 받지 못했습니다.',
+};
+
+function OnboardingLogin({ onLoginSuccess, onSignupSuccess }) {
   const [mode, setMode] = useState('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -796,6 +911,31 @@ function OnboardingLogin({ onLoginSuccess, onSignupSuccess, onSocial }) {
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [socialBusy, setSocialBusy] = useState('');
+
+  const handleSocial = async (provider) => {
+    setError('');
+    setSocialBusy(provider);
+    try {
+      const idToken = await fetchProviderIdToken(provider);
+      const res = await api.socialLogin(provider, idToken);
+      if (!res?.access_token) throw new Error('NO_ACCESS_TOKEN');
+      if (res.is_new_user) onSignupSuccess?.(res.user);
+      else onLoginSuccess?.(res.user);
+    } catch (err) {
+      const code = err?.message || '';
+      const serverMsg = err?.response?.data?.message;
+      const fallback = SOCIAL_ERROR_MESSAGES[code];
+      if (serverMsg) setError(serverMsg);
+      else if (fallback) setError(fallback);
+      else if (code.startsWith('SDK_LOAD_FAILED')) setError('소셜 로그인 SDK를 불러오지 못했습니다. 네트워크를 확인해주세요.');
+      else if (code.startsWith('KAKAO_FAIL')) setError(`카카오 로그인 실패: ${code.replace('KAKAO_FAIL:', '')}`);
+      else if (err?.response?.status === 400) setError('소셜 토큰 검증 실패. 다시 시도해주세요.');
+      else setError(`${provider} 로그인 실패`);
+    } finally {
+      setSocialBusy('');
+    }
+  };
 
   const switchMode = (next) => {
     setMode(next);
@@ -886,9 +1026,9 @@ function OnboardingLogin({ onLoginSuccess, onSignupSuccess, onSocial }) {
       <div className="auth-divider"><span>또는 소셜 계정으로</span></div>
 
       <div className="auth-button-group">
-        <button className="social-login-btn google-btn" onClick={onSocial}><span>G</span>Google로 계속하기</button>
-        <button className="social-login-btn apple-btn" onClick={onSocial}><span></span>Apple로 계속하기</button>
-        <button className="social-login-btn kakao-btn" onClick={onSocial}><span>●</span>카카오로 시작하기</button>
+        <button type="button" className="social-login-btn google-btn" onClick={() => handleSocial('google')} disabled={submitting || !!socialBusy}><span>G</span>{socialBusy === 'google' ? 'Google 인증 중…' : 'Google로 계속하기'}</button>
+        <button type="button" className="social-login-btn apple-btn" onClick={() => handleSocial('apple')} disabled={submitting || !!socialBusy}><span></span>{socialBusy === 'apple' ? 'Apple 인증 중…' : 'Apple로 계속하기'}</button>
+        <button type="button" className="social-login-btn kakao-btn" onClick={() => handleSocial('kakao')} disabled={submitting || !!socialBusy}><span>●</span>{socialBusy === 'kakao' ? '카카오 인증 중…' : '카카오로 시작하기'}</button>
       </div>
       <p className="terms-notice">계속하면 이용약관과 개인정보처리방침에 동의하는 것으로 간주됩니다.</p>
     </div>
