@@ -65,25 +65,210 @@ const DEFAULT_SCRAPS = [
   { id: 903, scrapId: 903, articleId: 20, folderId: 1, category: '기술·IT', source: '🇯🇵 일본 · 2일 전 09:00 세션', title: '日 정부, 반도체 산업에 1조엔 추가 지원', bullets: ['TSMC 쿠마모토 2공장 건설을 비롯한 국내 생산 거점 강화'], replies: 64, dateText: '2일 전 스크랩' },
 ];
 
-const MOCK_ARTICLES = {
+const DEFAULT_SOURCE_BY_COUNTRY = {
+  kr: { source: '네이버 뉴스', url: 'https://news.naver.com' },
+  us: { source: 'CNN', url: 'https://cnn.com' },
+  jp: { source: '야후재팬 뉴스', url: 'https://news.yahoo.co.jp' },
+};
+
+// 각 핀(pillIdx 0=가장 오래된 ... 5=지금)마다 6개의 고유 기사 세트.
+// 백엔드 미응답 시 fallback용 — pill timestamp랑 어울리는 시간대 헤드라인을 사용해 6개 슬롯이 시각적으로 구분되도록 한다.
+const SESSION_MOCK_BY_COUNTRY = {
   kr: [
-    { id: 1, category: '기술·IT', source: '네이버 뉴스', title: '반도체 수출 3개월 연속 증가, AI 수요가 견인', bullets: ['5월 반도체 수출액 전년 대비 18% 증가', 'HBM 등 AI용 메모리가 성장 주도'], replies: 142, originalUrl: 'https://news.naver.com' },
-    { id: 2, category: '경제', source: '네이버 뉴스', title: '한은 기준금리 동결, 시장 예상 부합', bullets: ['금통위 만장일치로 2.75% 유지 결정', '물가 안정세 지속이라고 판단'], replies: 87, originalUrl: 'https://news.naver.com' },
-    { id: 3, category: '정치', source: '네이버 뉴스', title: '국회 본회의서 민생법안 7건 통과', bullets: ['소상공인 지원법 개정안 등 여야 합의 처리', '주거안정 관련 법안도 함께 의결'], replies: 312, originalUrl: 'https://news.naver.com' },
-    { id: 4, category: '사회', source: '연합뉴스', title: '수도권 출퇴근 30분 단축, 광역버스 노선 대폭 확대', bullets: ['정부, 교통 사각지대 해소를 위한 대책 발표', '다음 달부터 순차적 운행 개시'], replies: 215, originalUrl: 'https://www.yna.co.kr' },
-    { id: 5, category: '스포츠', source: '일간스포츠', title: '손흥민, 시즌 마지막 경기서 극적 결승골 작렬', bullets: ['팀 내 최다 득점 기록 갱신하며 시즌 마무리', '평점 9.2로 경기 MVP 선정'], replies: 642, originalUrl: 'https://isplus.com' },
-    { id: 6, category: '연예·문화', source: 'OSEN', title: 'K-콘텐츠 글로벌 서밋 개막, 전 세계 바이어 집결', bullets: ['국내 주요 제작사 신작 라인업 공개', 'OTT 플랫폼 최적화 계약 성과 속출'], replies: 104, originalUrl: 'https://osen.co.kr' },
+    // pillIdx 0 — 어제 오후 시간대
+    [
+      { category: '경제', source: '네이버 뉴스', title: '코스피, 외국인 5거래일 연속 순매수에 2,710선 회복', bullets: ['반도체·2차전지 대형주가 지수 상승 견인', '환율 안정세도 외국인 자금 유입 도움'], replies: 287 },
+      { category: '기술·IT', source: '아이뉴스24', title: 'SK하이닉스, HBM3E 16단 양산 공정 진입 임박', bullets: ['차세대 AI 메모리 시장 선점 위한 추가 투자 결정'], replies: 198 },
+      { category: '정치', source: '중앙일보', title: '국회 환노위, 노란봉투법 본회의 회부 시점 협상 재개', bullets: ['여야 입장 차이 좁히지 못해 표결 일정 미정'], replies: 451 },
+      { category: '사회', source: '동아일보', title: '서울시, 야간 자율주행 셔틀 강남·여의도 시범 운행', bullets: ['총 4개 노선 우선 적용, 안전요원 동승 의무화'], replies: 132 },
+      { category: '스포츠', source: '스포츠서울', title: 'KBO 올스타전 명단 발표, LG·KIA 최다 선수 배출', bullets: ['팬 투표 외야수 부문 1위는 김도영'], replies: 524 },
+      { category: '연예·문화', source: '스포츠조선', title: '아이브, 도쿄 돔 단독 콘서트 전석 매진 행진', bullets: ['1만 5천 좌석 5분 만에 매진, 추가 공연 검토'], replies: 312 },
+    ],
+    // pillIdx 1 — 어제 저녁 시간대
+    [
+      { category: '경제', source: '네이버 뉴스', title: '코스피 1.4% 상승 마감, 코스닥도 동반 강세', bullets: ['종가 기준 연중 최고치 경신, 거래대금 14조 돌파'], replies: 364 },
+      { category: '정치', source: '한겨레', title: '야당, 추경 협상 결렬 책임 두고 의총 소집', bullets: ['이번 주 내 단독 발의 여부 결정 예정'], replies: 528 },
+      { category: '사회', source: 'YTN', title: '서울 지하철 2호선 신호 장애로 30분간 지연', bullets: ['퇴근길 시민 수만 명 불편, 코레일 사과 발표'], replies: 412 },
+      { category: '기술·IT', source: '디지털타임스', title: '구글, 한국에 두 번째 데이터센터 설립 발표', bullets: ['세종시 인근 5만 평 부지 검토, 2027년 가동 목표'], replies: 287 },
+      { category: '스포츠', source: 'KBL', title: 'V-리그 챔피언결정전, 현대캐피탈 5차전서 우승', bullets: ['8년 만의 통합 우승, MVP는 허수봉 선수'], replies: 198 },
+      { category: '연예·문화', source: 'OSEN', title: '주말 드라마 "달이 차오른다", 시청률 17% 돌파', bullets: ['종영 2회 남기고 자체 최고 시청률 경신'], replies: 256 },
+    ],
+    // pillIdx 2 — 오늘 자정
+    [
+      { category: '사회', source: '연합뉴스', title: '인천 부평구 상가 건물서 새벽 화재, 인명 피해 없어', bullets: ['소방서 추정 손실액 약 1억 8천만 원'], replies: 167 },
+      { category: '경제', source: '한국경제', title: '뉴욕증시 3대 지수 동반 사상 최고치 마감', bullets: ['S&P 500·나스닥 동시 신고가, AI 관련주 강세 지속'], replies: 421 },
+      { category: '기술·IT', source: '코인데스크코리아', title: '비트코인 7만 4천 달러 돌파 후 단기 조정', bullets: ['ETF 자금 유입 둔화에 차익 실현 매물 등장'], replies: 312 },
+      { category: '정치', source: '서울신문', title: '美 의회, 한반도 안보 청문회서 한미 공조 강화 합의', bullets: ['차세대 미사일 방어 기술 공동 개발 논의'], replies: 287 },
+      { category: '스포츠', source: '스포츠동아', title: '류현진, MLB 복귀전서 6이닝 무실점 호투', bullets: ['시속 153km 직구 회복, 다음 등판 일정 확정'], replies: 583 },
+      { category: '연예·문화', source: '빌보드코리아', title: '뉴진스, 빌보드 핫100 7주 연속 톱10 진입', bullets: ['"Supernatural" 9위 유지, K팝 최장 기록 갱신'], replies: 471 },
+    ],
+    // pillIdx 3 — 오늘 새벽
+    [
+      { category: '사회', source: 'KBS', title: '강원 영동 지역에 호우주의보, 산사태 위험 경보', bullets: ['시간당 30mm 폭우 예보, 출근길 통제 가능성'], replies: 142 },
+      { category: '경제', source: '이데일리', title: '원/달러 환율 1,372원 출발 전망', bullets: ['지난밤 미 달러 약세 영향, 수출 기업 채산성 부담 완화'], replies: 198 },
+      { category: '기술·IT', source: 'AI타임스', title: 'OpenAI, GPT-5 정식 출시 임박 단계 진입', bullets: ['멀티모달 추론 강화, 한국어 응답 품질 대폭 개선'], replies: 612 },
+      { category: '정치', source: '외교부', title: '외교부, 한일 정상회담 의제 조율 마무리 단계', bullets: ['반도체 공급망·인공지능 협력 의제 포함'], replies: 256 },
+      { category: '스포츠', source: '점프볼', title: 'NBA 파이널 5차전, 셀틱스 시리즈 결승골 빛났다', bullets: ['타이리스 매슈가 결정적 3점슛 적중'], replies: 387 },
+      { category: '연예·문화', source: '버라이어티 코리아', title: '봉준호 신작, 칸 영화제 비경쟁 부문 공식 초청', bullets: ['이병헌·송강호 출연, 9월 국내 개봉 예정'], replies: 425 },
+    ],
+    // pillIdx 4 — 오늘 오전
+    [
+      { category: '경제', source: '머니투데이', title: '코스피 0.6% 상승 출발, 외국인 매수 지속', bullets: ['반도체·자동차 업종 강세, 거래량 평소보다 활발'], replies: 312 },
+      { category: '정치', source: '대통령실', title: '대통령, 시민단체와 노동 정책 간담회 개최', bullets: ['최저임금·근로시간 등 핵심 의제 폭넓게 논의'], replies: 487 },
+      { category: '사회', source: 'TBS', title: '출근길 강변북로 5중 추돌, 1시간 정체', bullets: ['인명피해 없음, 차량 견인 완료까지 우회 권고'], replies: 234 },
+      { category: '기술·IT', source: 'ZDNet 코리아', title: '네이버, 자체 LLM "하이퍼클로바X 2" 전면 공개', bullets: ['파라미터 2조 규모, 추론 비용 30% 절감 강조'], replies: 542 },
+      { category: '스포츠', source: 'KFA', title: '여자 축구 대표팀, 호주 원정 평가전 2-1 승리', bullets: ['지소연 결승골, 9월 아시안컵 분위기 끌어올려'], replies: 198 },
+      { category: '연예·문화', source: '스타뉴스', title: '아이유 컴백 D-3, 멜론 인기예약 1위 등극', bullets: ['타이틀곡 "햇살의 결" 티저 영상 누적 조회 800만'], replies: 612 },
+    ],
+    // pillIdx 5 — 지금 (오후)
+    [
+      { category: '기술·IT', source: '네이버 뉴스', title: '반도체 수출 3개월 연속 증가, AI 수요가 견인', bullets: ['5월 반도체 수출액 전년 대비 18% 증가', 'HBM 등 AI용 메모리가 성장 주도'], replies: 142 },
+      { category: '경제', source: '네이버 뉴스', title: '한은 기준금리 동결, 시장 예상 부합', bullets: ['금통위 만장일치로 2.75% 유지 결정', '물가 안정세 지속이라고 판단'], replies: 87 },
+      { category: '정치', source: '네이버 뉴스', title: '국회 본회의서 민생법안 7건 통과', bullets: ['소상공인 지원법 개정안 등 여야 합의 처리', '주거안정 관련 법안도 함께 의결'], replies: 312 },
+      { category: '사회', source: '연합뉴스', title: '수도권 출퇴근 30분 단축, 광역버스 노선 대폭 확대', bullets: ['정부, 교통 사각지대 해소를 위한 대책 발표', '다음 달부터 순차적 운행 개시'], replies: 215 },
+      { category: '스포츠', source: '일간스포츠', title: '손흥민, 시즌 마지막 경기서 극적 결승골 작렬', bullets: ['팀 내 최다 득점 기록 갱신하며 시즌 마무리', '평점 9.2로 경기 MVP 선정'], replies: 642 },
+      { category: '연예·문화', source: 'OSEN', title: 'K-콘텐츠 글로벌 서밋 개막, 전 세계 바이어 집결', bullets: ['국내 주요 제작사 신작 라인업 공개', 'OTT 플랫폼 최적화 계약 성과 속출'], replies: 104 },
+    ],
   ],
   us: [
-    { id: 10, category: '기술·IT', source: 'CNN Business', title: 'Nvidia Market Cap Surpasses Apple Amid AI Boom', bullets: ['Nvidia becomes the second most valuable US company', 'Stock surges following quarterly earnings'], replies: 521, originalUrl: 'https://cnn.com' },
-    { id: 11, category: '경제', source: 'Wall Street Journal', title: 'Fed Hints at Rate Cuts Later This Year as Inflation Cools', bullets: ['CPI rose less than expected in April', 'Powell emphasizes data-dependent approach'], replies: 419, originalUrl: 'https://wsj.com' },
-    { id: 12, category: '사회', source: 'New York Times', title: 'New Green Space Initiative Launches Across Major US Cities', bullets: ['Federal funding allocated to restore urban parks', 'Program aims to reduce heat islands'], replies: 135, originalUrl: 'https://nytimes.com' },
+    // pillIdx 0
+    [
+      { category: '기술·IT', source: 'The Verge', title: 'Apple Vision Pro 2 Said to Launch Lighter Design Next Spring', bullets: ['Reports cite weight reduction of nearly 30%'], replies: 412 },
+      { category: '경제', source: 'Bloomberg', title: 'US 10-Year Treasury Yields Climb Above 4.4%', bullets: ['Bond investors react to stronger jobs data'], replies: 287 },
+      { category: '정치', source: 'Politico', title: 'Senate Advances Bipartisan Border Security Bill', bullets: ['Cloture vote passes 68-32, final vote tomorrow'], replies: 521 },
+      { category: '사회', source: 'AP', title: 'California Wildfire Forces Evacuation of 2,000 Residents', bullets: ['Firefighters race to contain 7,500-acre blaze'], replies: 312 },
+      { category: '스포츠', source: 'ESPN', title: 'NBA Finals Heads to Game 6 After Celtics Force Decider', bullets: ['Jaylen Brown drops 35 in crucial road win'], replies: 612 },
+      { category: '연예·문화', source: 'Variety', title: 'Marvel Confirms "Avengers: Secret Wars" Casting Lineup', bullets: ['Robert Downey Jr. returns as new villain Doctor Doom'], replies: 824 },
+    ],
+    // pillIdx 1
+    [
+      { category: '경제', source: 'Reuters', title: 'S&P 500 Closes Up 0.7% Led by Tech and Energy', bullets: ['Nvidia, Exxon among top gainers'], replies: 367 },
+      { category: '정치', source: 'The Hill', title: 'House Speaker Outlines Year-End Spending Priorities', bullets: ['Defense and border funding top the list'], replies: 421 },
+      { category: '사회', source: 'CNN', title: 'Tropical Storm Eduardo Strengthens to Category 1 Hurricane', bullets: ['NHC issues warnings for parts of Gulf Coast'], replies: 287 },
+      { category: '기술·IT', source: 'TechCrunch', title: 'Microsoft Unveils Copilot Agents for Enterprise Workflows', bullets: ['Available to 365 Premium customers from next month'], replies: 312 },
+      { category: '스포츠', source: 'WNBA', title: 'Caitlin Clark Sets New WNBA Single-Game Assist Record', bullets: ['Indiana Fever guard notches 19 assists in win'], replies: 521 },
+      { category: '연예·문화', source: 'BroadwayWorld', title: 'Tony Awards 2026 Nominations Spark Surprises', bullets: ['Off-Broadway hit "Bridges" leads with 11 nods'], replies: 198 },
+    ],
+    // pillIdx 2
+    [
+      { category: '사회', source: 'NBC News', title: 'Thousands Rally in NYC Over Housing Affordability Crisis', bullets: ['Marchers call on city council to expand rent caps'], replies: 412 },
+      { category: '경제', source: 'CNBC', title: 'Dollar Index Eases to 4-Week Low Against Major Currencies', bullets: ['Soft labor data fuels Fed cut speculation'], replies: 287 },
+      { category: '기술·IT', source: 'Electrek', title: 'Tesla Cybertruck Refresh Adds Off-Road Package', bullets: ['New 35-inch tires and extended battery option detailed'], replies: 521 },
+      { category: '정치', source: 'Washington Post', title: 'White House Issues Statement Condemning Middle East Strikes', bullets: ['Administration urges restraint, opens emergency channels'], replies: 612 },
+      { category: '스포츠', source: 'MLB.com', title: 'Late-Inning Walk-Off Lifts Dodgers Past Padres', bullets: ['Mookie Betts homers off the foul pole in the 10th'], replies: 387 },
+      { category: '연예·문화', source: 'Vulture', title: 'Late Night Hosts Skewer Latest Senate Drama', bullets: ['Stewart and Colbert deliver double-team monologue'], replies: 256 },
+    ],
+    // pillIdx 3
+    [
+      { category: '사회', source: 'Reuters', title: 'Pre-Dawn Earthquake Magnitude 4.5 Hits Northern California', bullets: ['No major damage reported, USGS monitoring aftershocks'], replies: 142 },
+      { category: '경제', source: 'MarketWatch', title: 'US Futures Point Higher Ahead of Inflation Report', bullets: ['Traders position for Fed minutes release later today'], replies: 198 },
+      { category: '기술·IT', source: 'Space.com', title: 'SpaceX Falcon 9 Successfully Launches 22 Starlink Satellites', bullets: ['Booster makes 18th successful landing'], replies: 412 },
+      { category: '정치', source: 'Defense News', title: 'Pentagon Approves New Arms Package to Pacific Allies', bullets: ['Includes advanced radar and missile defense components'], replies: 287 },
+      { category: '스포츠', source: 'ESPN', title: 'NBA Late Game: Lakers Edge Warriors in OT Thriller', bullets: ['LeBron and Davis combine for 67 points'], replies: 612 },
+      { category: '연예·문화', source: 'Deadline', title: 'Netflix Greenlights Sequel to Hit Sci-Fi Series "Echoes"', bullets: ['Production scheduled to begin in Vancouver next fall'], replies: 234 },
+    ],
+    // pillIdx 4
+    [
+      { category: '경제', source: 'CNBC', title: 'Wall Street Opens Mixed as Investors Digest Jobs Data', bullets: ['Dow flat, Nasdaq edges up 0.3% at open'], replies: 312 },
+      { category: '정치', source: 'CNN', title: 'President Departs for G7 Summit in Italy', bullets: ['Trade and climate cooperation top the agenda'], replies: 487 },
+      { category: '사회', source: 'NBC News', title: 'Northeast Heatwave Triggers Cooling Center Activations', bullets: ['NYC, Boston, Philadelphia all open emergency facilities'], replies: 234 },
+      { category: '기술·IT', source: 'Google Blog', title: 'Google Announces Gemini Ultra 2 with Enhanced Reasoning', bullets: ['Available to Workspace customers globally starting today'], replies: 542 },
+      { category: '스포츠', source: 'FOX Sports', title: 'USMNT Begins World Cup Qualifier Camp in Florida', bullets: ['Coach reveals 26-man squad ahead of Honduras tie'], replies: 198 },
+      { category: '연예·문화', source: 'Hollywood Reporter', title: 'Streaming Wars: Disney+ Subscribers Cross 200M Mark', bullets: ['Profitability target reached one quarter ahead of plan'], replies: 612 },
+    ],
+    // pillIdx 5 — 지금
+    [
+      { category: '기술·IT', source: 'CNN Business', title: 'Nvidia Market Cap Surpasses Apple Amid AI Boom', bullets: ['Nvidia becomes the second most valuable US company', 'Stock surges following quarterly earnings'], replies: 521 },
+      { category: '경제', source: 'Wall Street Journal', title: 'Fed Hints at Rate Cuts Later This Year as Inflation Cools', bullets: ['CPI rose less than expected in April', 'Powell emphasizes data-dependent approach'], replies: 419 },
+      { category: '사회', source: 'New York Times', title: 'New Green Space Initiative Launches Across Major US Cities', bullets: ['Federal funding allocated to restore urban parks', 'Program aims to reduce heat islands'], replies: 135 },
+      { category: '정치', source: 'Politico', title: 'Senate Confirms Three Federal Judges in Bipartisan Vote', bullets: ['Confirmations clear backlog ahead of summer recess'], replies: 287 },
+      { category: '스포츠', source: 'ESPN', title: 'NBA Finals MVP Race Tightens Heading Into Game 7', bullets: ['Tatum and Doncic each carry top-3 odds with sportsbooks'], replies: 612 },
+      { category: '연예·문화', source: 'Variety', title: 'Pixar Reveals First Look at Original Animated Feature "Atlas"', bullets: ['Director Pete Docter returns with summer 2027 release'], replies: 412 },
+    ],
   ],
   jp: [
-    { id: 20, category: '경제', source: '야후재팬 뉴스', title: '日経平均株価、半導体関連株牽引で再び3万9千円突破', bullets: ['도쿄일렉트론 등 주요 장비 기업 주가 동반 급등'], replies: 93, originalUrl: 'https://news.yahoo.co.jp' },
-    { id: 21, category: '기술·IT', source: '日経新聞', title: 'ラピダス、2나노 차세대 반도체 시제품 공정 연내 가동 선언', bullets: ['홋카이도 치토세 공장 건설 순항 중'], replies: 74, originalUrl: 'https://nikkei.com' },
+    // pillIdx 0
+    [
+      { category: '경제', source: '야후재팬 뉴스', title: '日銀、金融政策の段階的正常化を再確認', bullets: ['追加利上げ時期は秋以降を示唆'], replies: 167 },
+      { category: '정치', source: '朝日新聞', title: '与党、税制改正の最終案で党内協議継続', bullets: ['年末までの取りまとめを目指す'], replies: 234 },
+      { category: '사회', source: 'NHK', title: '東京湾岸エリアで震度4の地震、津波の心配なし', bullets: ['鉄道は数十分の遅延発生'], replies: 312 },
+      { category: '기술·IT', source: '日経新聞', title: 'ソニー、新型イメージセンサーをスマホ向けに量産', bullets: ['暗所撮影性能を最大40%向上'], replies: 198 },
+      { category: '스포츠', source: 'スポーツ報知', title: 'プロ野球セ・リーグ首位攻防、巨人が阪神を下す', bullets: ['岡本和真が決勝3ランで完封勝利'], replies: 287 },
+      { category: '연예·문화', source: '映画.com', title: '是枝裕和監督の新作、第78回カンヌ映画祭で銀賞受賞', bullets: ['日本人監督として5年ぶりの主要賞獲得'], replies: 412 },
+    ],
+    // pillIdx 1
+    [
+      { category: '경제', source: '日経新聞', title: '円相場、対ドルで一時157円台に乗せ年初来安値圏', bullets: ['米長期金利上昇と日銀政策据え置き観測が背景'], replies: 287 },
+      { category: '정치', source: '読売新聞', title: '国会、衆参両院議長が議事日程協議', bullets: ['予算審議の前倒し可否が焦点に'], replies: 198 },
+      { category: '사회', source: '毎日新聞', title: '首都圏で大雨、JR山手線が一部区間で運転見合わせ', bullets: ['帰宅ラッシュ直撃、振替輸送実施'], replies: 412 },
+      { category: '기술·IT', source: 'ITmedia', title: 'NTTドコモ、5GオールSAエリアを全国主要都市に拡大', bullets: ['年内には人口カバー率90%超を目指す'], replies: 156 },
+      { category: '스포츠', source: 'スポニチ', title: 'Jリーグ首位攻防、ヴィッセル神戸が川崎を退ける', bullets: ['大迫勇也が決勝点、首位独走へ大きな一歩'], replies: 234 },
+      { category: '연예·문화', source: 'オリコン', title: 'NHK紅白歌合戦、出場歌手第一弾を発表', bullets: ['若手アーティスト10組以上が初出場の見通し'], replies: 312 },
+    ],
+    // pillIdx 2
+    [
+      { category: '사회', source: 'NHK', title: '東京・新宿で深夜の火災、けが人なし', bullets: ['雑居ビル4階から出火、約2時間後に鎮火'], replies: 142 },
+      { category: '경제', source: 'ロイター', title: 'NY市場のドル円、156円後半で取引終了', bullets: ['米雇用統計を控えポジション調整の動き'], replies: 198 },
+      { category: '기술·IT', source: '東洋経済', title: 'トヨタ、全固体電池搭載EVの先行量産を発表', bullets: ['2027年型「bZ5」シリーズに最初に採用'], replies: 412 },
+      { category: '정치', source: 'BBC日本語', title: '国連安保理、東アジア情勢めぐる緊急会合を開催', bullets: ['日本も非常任理事国として発言、緊張緩和を訴え'], replies: 287 },
+      { category: '스포츠', source: 'MLB公式', title: '大谷翔平、3戦連続ホームランで打率4割台に', bullets: ['ナ・リーグ本塁打王争いを大きくリード'], replies: 612 },
+      { category: '연예·문화', source: 'Billboard JAPAN', title: 'YOASOBI、米ビルボードチャートで自己最高位を記録', bullets: ['"アイドル英語版"が総合43位に浮上'], replies: 471 },
+    ],
+    // pillIdx 3
+    [
+      { category: '사회', source: 'NHK', title: '北海道で観測史上3番目の早さで桜開花', bullets: ['平年より2週間以上早く春の訪れ'], replies: 132 },
+      { category: '경제', source: '時事通信', title: '東京市場、寄り付き前から先物指数が上昇', bullets: ['NY続伸を受け輸出株中心に買い先行の見通し'], replies: 167 },
+      { category: '기술·IT', source: '日経新聞', title: 'ラピダス、2ナノ次世代半導体試作工程を年内稼働', bullets: ['北海道千歳工場の建設工事は順調に進捗'], replies: 234 },
+      { category: '정치', source: '外務省', title: '外相、ASEAN関連会合へ向け出発', bullets: ['経済安全保障とサプライチェーン強化を協議'], replies: 198 },
+      { category: '스포츠', source: 'バスケット・カウント', title: 'バスケB1リーグ早朝速報、千葉ジェッツが連勝', bullets: ['原修太がチーム最多得点で勝利に貢献'], replies: 156 },
+      { category: '연예·문화', source: 'Cinemacafe', title: 'スタジオジブリ新作、年末公開予定で予告編解禁', bullets: ['宮崎吾朗監督2作目、世界同時公開を狙う'], replies: 412 },
+    ],
+    // pillIdx 4
+    [
+      { category: '경제', source: '日経新聞', title: '日経平均、午前の取引で4万円台を回復', bullets: ['半導体関連株が指数を押し上げ'], replies: 287 },
+      { category: '정치', source: '官邸', title: '総理、与野党党首会談を午後に開催', bullets: ['物価高対策と所得補填措置が議題の中心'], replies: 421 },
+      { category: '사회', source: 'TBS', title: '通勤ラッシュ時の山手線、信号トラブルで遅延', bullets: ['池袋〜上野間で一時運転見合わせ'], replies: 198 },
+      { category: '기술·IT', source: 'ITmedia AI+', title: 'ソフトバンク、独自LLM「Geminize-J」一般提供開始', bullets: ['日本語特化モデル、月額利用料は1,980円'], replies: 312 },
+      { category: '스포츠', source: 'スポーツ報知', title: '女子サッカー日本代表、欧州遠征メンバー発表', bullets: ['長谷川唯ら主力召集、新人2名も合流'], replies: 234 },
+      { category: '연예·문화', source: 'モデルプレス', title: '朝の音楽番組ランキング、Mrs. GREEN APPLE首位', bullets: ['新曲「春景」が再生数1億回突破'], replies: 521 },
+    ],
+    // pillIdx 5 — 지금
+    [
+      { category: '경제', source: '야후재팬 뉴스', title: '日経平均株価、半導체関連株牽引で再び3万9千円突破', bullets: ['도쿄일렉트론 등 주요 장비 기업 주가 동반 급등'], replies: 93 },
+      { category: '기술·IT', source: '日経新聞', title: 'ラピダス、2ナノ次世代半導체試作工程を年内稼働', bullets: ['홋카이도 치토세 공장 건설 순항 중'], replies: 74 },
+      { category: '정치', source: '読売新聞', title: '与党、政治資金規正法改正案を本会議に提出', bullets: ['企業献金の上限規制を強化、罰則も明文化'], replies: 198 },
+      { category: '사회', source: '朝日新聞', title: '東京メトロ、混雑緩和に向けピーク時運転本数を増便', bullets: ['丸ノ内·東西·有楽町의 3개 노선 우선 적용'], replies: 156 },
+      { category: '스포츠', source: 'スポニチ', title: '大谷翔平 23호 홈런, 어니언스 격파에 결정적 한 방', bullets: ['시즌 OPS 1.180으로 메이저리그 단연 1위'], replies: 612 },
+      { category: '연예·문화', source: 'NHK', title: '"カムカム" 続編 발표, 새 주인공 캐스팅 공개', bullets: ['NHK 아침 드라마 2027년 봄 방영 예정'], replies: 287 },
+    ],
   ],
 };
+
+function withDefaults(article, idx, country, pillIdx) {
+  const def = DEFAULT_SOURCE_BY_COUNTRY[country] || { source: '뉴스브리프', url: '#' };
+  return {
+    ...article,
+    id: article.id ?? `${country}-p${pillIdx}-${idx}`,
+    source: article.source || def.source,
+    originalUrl: article.originalUrl || def.url,
+  };
+}
+
+const MOCK_ARTICLES = {
+  kr: SESSION_MOCK_BY_COUNTRY.kr[5].map((a, i) => withDefaults(a, i, 'kr', 5)),
+  us: SESSION_MOCK_BY_COUNTRY.us[5].map((a, i) => withDefaults(a, i, 'us', 5)),
+  jp: SESSION_MOCK_BY_COUNTRY.jp[5].map((a, i) => withDefaults(a, i, 'jp', 5)),
+};
+
+function getMockArticlesForSession(country, category, pillIdx) {
+  const pool = SESSION_MOCK_BY_COUNTRY[country];
+  if (!pool) return [];
+  const safeIdx = Math.max(0, Math.min(pool.length - 1, pillIdx));
+  const articles = pool[safeIdx].map((a, i) => withDefaults(a, i, country, safeIdx));
+  const selected = CATEGORY_OPTIONS.find((item) => item.key === category);
+  if (!selected || category === 'all') return articles;
+  return articles.filter((article) => article.category === selected.label);
+}
 
 const DEFAULT_COMMENTS = {
   1: [
@@ -288,10 +473,9 @@ const api = {
 };
 
 function getMockArticles(country, category) {
-  const all = MOCK_ARTICLES[country] || [];
-  const selected = CATEGORY_OPTIONS.find((item) => item.key === category);
-  if (!selected || category === 'all') return all;
-  return all.filter((article) => article.category === selected.label);
+  const pool = SESSION_MOCK_BY_COUNTRY[country];
+  if (!pool) return [];
+  return getMockArticlesForSession(country, category, pool.length - 1);
 }
 
 function getTodayFormattedDate() {
@@ -822,9 +1006,8 @@ function HomeTimelineView({ isDarkMode, onThemeChange, unreadCount, onNotiIconCl
       if (match) articles = await api.getSessionArticles(match.sessionId, { category: currentCat });
     } catch (_) { /* fall through to mock */ }
     if (!articles.length) {
-      const base = getMockArticles(currentCountry, currentCat);
-      const offset = sessionPills.length - 1 - sessionPills.indexOf(pill);
-      articles = base.map((a, i) => ({ ...a, id: `${a.id}-s${pill.timestamp}` , title: `[${pill.hourLabel} ${pill.dateLabel}] ${a.title}`, rank: ((i + offset) % base.length) + 1 }));
+      const pillIdx = sessionPills.indexOf(pill);
+      articles = getMockArticlesForSession(currentCountry, currentCat, pillIdx);
     }
     setServerArticles(articles);
     if (showLoading) setTimeout(() => setIsLoading(false), 250);
