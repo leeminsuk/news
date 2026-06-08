@@ -4,10 +4,17 @@ import axios from 'axios';
 import './App.css';
 
 const AXIOS_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+const AUTH_BASE_URL = AXIOS_BASE_URL.replace(/\/api\/v1\/?$/, '') + '/api/auth';
 const ACCESS_TOKEN_KEY = 'newsbrief_access_token';
 
 const apiClient = axios.create({
   baseURL: AXIOS_BASE_URL,
+  timeout: 8000,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+const authClient = axios.create({
+  baseURL: AUTH_BASE_URL,
   timeout: 8000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -248,6 +255,16 @@ const api = {
   },
   deleteAccount() {
     return apiClient.delete('/users/me');
+  },
+  async signupEmail({ name, email, password }) {
+    const res = await authClient.post('/signup', { name, email, password });
+    return unwrap(res.data);
+  },
+  async loginEmail({ email, password }) {
+    const res = await authClient.post('/login', { email, password });
+    const payload = res.data || {};
+    if (payload.token) localStorage.setItem(ACCESS_TOKEN_KEY, payload.token);
+    return payload;
   },
 };
 
@@ -498,7 +515,16 @@ function App() {
       </div>
 
       <div className="app-main-content-area">
-        {view === 'onboarding' && <OnboardingLogin onNext={() => setView('step2')} />}
+        {view === 'onboarding' && (
+          <OnboardingLogin
+            onLoginSuccess={(user) => {
+              if (user?.name) setProfile({ name: user.name, email: user.email || '', initial: String(user.name)[0] || '민' });
+              setView('home');
+            }}
+            onSignupSuccess={() => setView('step2')}
+            onSocial={() => setView('step2')}
+          />
+        )}
         {view === 'step2' && <CountryStep selectedCountries={selectedCountries} toggleCountry={toggleCountry} isAnyCountrySelected={isAnyCountrySelected} onPrev={() => setView('onboarding')} onNext={() => setView('step3')} />}
         {view === 'step3' && <CategoryStep selectedCategories={selectedCategories} toggleCategory={toggleCategory} isAnyCategorySelected={isAnyCategorySelected} onPrev={() => setView('step2')} onNext={() => setView('step4')} />}
         {view === 'step4' && <NotificationStep notificationSettings={notificationSettings} setNotificationSettings={setNotificationSettings} onPrev={() => setView('step3')} onFinish={handleFinishOnboarding} />}
@@ -525,17 +551,107 @@ function mergeScraps(current, incoming) {
   return [...map.values()];
 }
 
-function OnboardingLogin({ onNext }) {
+function OnboardingLogin({ onLoginSuccess, onSignupSuccess, onSocial }) {
+  const [mode, setMode] = useState('login');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const switchMode = (next) => {
+    setMode(next);
+    setError('');
+    setPassword('');
+    setPasswordConfirm('');
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError('');
+
+    if (!email.trim() || !password.trim()) {
+      setError('이메일과 비밀번호를 입력해주세요.');
+      return;
+    }
+    if (mode === 'signup') {
+      if (!name.trim()) { setError('이름을 입력해주세요.'); return; }
+      if (password.length < 6) { setError('비밀번호는 6자 이상 입력해주세요.'); return; }
+      if (password !== passwordConfirm) { setError('비밀번호가 일치하지 않습니다.'); return; }
+    }
+
+    setSubmitting(true);
+    try {
+      if (mode === 'signup') {
+        await api.signupEmail({ name: name.trim(), email: email.trim(), password });
+        const loginRes = await api.loginEmail({ email: email.trim(), password });
+        onSignupSuccess?.(loginRes?.user);
+      } else {
+        const res = await api.loginEmail({ email: email.trim(), password });
+        if (!res?.token) throw new Error('NO_TOKEN');
+        onLoginSuccess?.(res.user);
+      }
+    } catch (err) {
+      const status = err?.response?.status;
+      const message = err?.response?.data?.message;
+      if (message) setError(message);
+      else if (status === 401) setError('이메일 또는 비밀번호가 틀렸습니다.');
+      else if (status === 409) setError('이미 사용 중인 이메일입니다.');
+      else if (err?.message === 'Network Error') setError('서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.');
+      else setError(mode === 'signup' ? '회원가입에 실패했습니다.' : '로그인에 실패했습니다.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="home-container onboarding-center">
       <div className="step-indicator">STEP 1 / 4</div>
       <div className="app-brand-icon"><div className="brand-symbol">▤</div></div>
       <h1 className="brand-heading">뉴스브리프</h1>
       <p className="brand-description">AI가 5시간마다 자동으로 요약해주는<br />3개국 주요 뉴스</p>
+
+      <div className="auth-tab-row" role="tablist">
+        <button type="button" role="tab" aria-selected={mode === 'login'} className={`auth-tab-btn ${mode === 'login' ? 'is-active' : ''}`} onClick={() => switchMode('login')}>로그인</button>
+        <button type="button" role="tab" aria-selected={mode === 'signup'} className={`auth-tab-btn ${mode === 'signup' ? 'is-active' : ''}`} onClick={() => switchMode('signup')}>회원가입</button>
+      </div>
+
+      <form className="auth-form" onSubmit={handleSubmit} noValidate>
+        {mode === 'signup' && (
+          <label className="auth-field">
+            <span>이름</span>
+            <input type="text" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="홍길동" />
+          </label>
+        )}
+        <label className="auth-field">
+          <span>이메일</span>
+          <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+        </label>
+        <label className="auth-field">
+          <span>비밀번호</span>
+          <input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="6자 이상" />
+        </label>
+        {mode === 'signup' && (
+          <label className="auth-field">
+            <span>비밀번호 확인</span>
+            <input type="password" autoComplete="new-password" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} placeholder="다시 입력" />
+          </label>
+        )}
+
+        {error && <p className="auth-error" role="alert">{error}</p>}
+
+        <button type="submit" className="auth-submit-btn" disabled={submitting}>
+          {submitting ? '처리 중…' : (mode === 'signup' ? '회원가입하고 시작하기' : '로그인')}
+        </button>
+      </form>
+
+      <div className="auth-divider"><span>또는 소셜 계정으로</span></div>
+
       <div className="auth-button-group">
-        <button className="social-login-btn google-btn" onClick={onNext}><span>G</span>Google로 계속하기</button>
-        <button className="social-login-btn apple-btn" onClick={onNext}><span></span>Apple로 계속하기</button>
-        <button className="social-login-btn kakao-btn" onClick={onNext}><span>●</span>카카오로 시작하기</button>
+        <button className="social-login-btn google-btn" onClick={onSocial}><span>G</span>Google로 계속하기</button>
+        <button className="social-login-btn apple-btn" onClick={onSocial}><span></span>Apple로 계속하기</button>
+        <button className="social-login-btn kakao-btn" onClick={onSocial}><span>●</span>카카오로 시작하기</button>
       </div>
       <p className="terms-notice">계속하면 이용약관과 개인정보처리방침에 동의하는 것으로 간주됩니다.</p>
     </div>

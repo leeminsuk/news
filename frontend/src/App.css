@@ -90,11 +90,24 @@ body.dark-body {
 .brand-heading { font-size: 27px; margin: 14px 0 8px; letter-spacing: -0.5px; }
 .brand-description, .terms-notice, .step-sub-title { color: var(--text-muted); line-height: 1.55; }
 .step-main-title { margin: 6px 0 0; font-size: 24px; letter-spacing: -0.5px; }
-.auth-button-group { width: min(100%, 360px); display: grid; gap: 12px; margin-top: 26px; }
+.auth-button-group { width: min(100%, 360px); display: grid; gap: 12px; margin-top: 18px; }
 .social-login-btn { height: 52px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); color: var(--text-main); display: flex; align-items: center; justify-content: center; gap: 12px; font-weight: 800; }
 .social-login-btn span { position: absolute; transform: translateX(-130px); font-weight: 900; }
 .apple-btn { background: #000 !important; color: #fff !important; border-color: #000 !important; }
 .kakao-btn { background: #fee500 !important; color: #191919 !important; border-color: #fee500 !important; }
+
+.auth-tab-row { width: min(100%, 360px); display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 22px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 4px; }
+.auth-tab-btn { height: 40px; border: none; background: transparent; color: var(--text-muted); font-weight: 700; border-radius: 8px; cursor: pointer; transition: background .15s ease, color .15s ease; }
+.auth-tab-btn.is-active { background: var(--primary); color: var(--bg-app); }
+.auth-form { width: min(100%, 360px); display: grid; gap: 12px; margin-top: 16px; text-align: left; }
+.auth-field { display: grid; gap: 6px; font-size: 13px; color: var(--text-muted); }
+.auth-field input { height: 46px; padding: 0 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text-main); font-size: 15px; outline: none; transition: border-color .15s ease; }
+.auth-field input:focus { border-color: var(--primary); }
+.auth-error { margin: 2px 0 0; color: #d2354a; font-size: 13px; font-weight: 600; }
+.auth-submit-btn { margin-top: 4px; height: 52px; border-radius: 14px; border: none; background: var(--primary); color: var(--bg-app); font-weight: 800; font-size: 15px; cursor: pointer; }
+.auth-submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.auth-divider { width: min(100%, 360px); display: flex; align-items: center; gap: 10px; margin: 18px 0 0; color: var(--text-muted); font-size: 12px; }
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
 .selection-list { display: grid; gap: 12px; }
 .selection-card, .matrix-item, .toggle-row-item, .article-main-card, .settings-card, .profile-card, .folder-card, .original-link-banner, .comment-row-item {
