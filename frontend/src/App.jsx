@@ -169,6 +169,25 @@ const api = {
     if (!Array.isArray(list)) return [];
     return list.map((item, index) => normalizeArticle(item, index, category));
   },
+  async getSessions({ country }) {
+    const res = await apiClient.get('/sessions', { params: { country, limit: 6 } });
+    const list = unwrap(res.data);
+    if (!Array.isArray(list)) return [];
+    return list.map((item) => ({
+      sessionId: item.session_id ?? item.sessionId ?? item.id,
+      startedAt: item.started_at ?? item.startedAt,
+      isCurrent: !!(item.is_current ?? item.isCurrent),
+    }));
+  },
+  async getSessionArticles(sessionId, { category } = {}) {
+    const selected = CATEGORY_OPTIONS.find((item) => item.key === category);
+    const params = {};
+    if (selected?.api) params.category = selected.api;
+    const res = await apiClient.get(`/sessions/${sessionId}/articles`, { params });
+    const list = unwrap(res.data);
+    if (!Array.isArray(list)) return [];
+    return list.map((item, index) => normalizeArticle(item, index, category));
+  },
   async getFeedStatus() {
     const res = await apiClient.get('/feed/status');
     return unwrap(res.data) || {};
@@ -757,15 +776,29 @@ function HomeTimelineView({ isDarkMode, onThemeChange, unreadCount, onNotiIconCl
   const [minutesUntilNext, setMinutesUntilNext] = useState(134);
   const [lastCrawlingTime, setLastCrawlingTime] = useState('14:00');
   const [sessionPills, setSessionPills] = useState(() => calcSessionPills());
+  const [activeSessionIdx, setActiveSessionIdx] = useState(-1);
 
   useEffect(() => {
-    const recompute = () => setSessionPills(calcSessionPills());
+    const recompute = () => {
+      const next = calcSessionPills();
+      setSessionPills(next);
+      setActiveSessionIdx((prev) => (prev === -1 ? -1 : Math.min(prev, next.length - 1)));
+    };
     recompute();
     const timer = setInterval(recompute, 30000);
     return () => clearInterval(timer);
   }, []);
 
-  const activeSessionLabel = sessionPills.length ? sessionPills[sessionPills.length - 1].hourLabel : '14:00';
+  useEffect(() => { setActiveSessionIdx(-1); }, [currentCountry, currentCat]);
+
+  const effectiveIdx = activeSessionIdx === -1 ? sessionPills.length - 1 : activeSessionIdx;
+  const activePill = sessionPills[effectiveIdx];
+  const activeSessionLabel = activePill?.hourLabel ?? '14:00';
+  const activeIsNow = effectiveIdx === sessionPills.length - 1;
+
+  const handlePillClick = (idx) => {
+    setActiveSessionIdx(idx === sessionPills.length - 1 ? -1 : idx);
+  };
 
   const getLatestArticlesFromServer = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
@@ -779,7 +812,33 @@ function HomeTimelineView({ isDarkMode, onThemeChange, unreadCount, onNotiIconCl
     }
   };
 
-  useEffect(() => { getLatestArticlesFromServer(true); }, [currentCountry, currentCat]);
+  const getArticlesForPill = async (pill, showLoading = true) => {
+    if (!pill || pill.isNow) return getLatestArticlesFromServer(showLoading);
+    if (showLoading) setIsLoading(true);
+    let articles = [];
+    try {
+      const sessions = await api.getSessions({ country: currentCountry });
+      const match = sessions.find((s) => s.startedAt && Math.abs(new Date(s.startedAt).getTime() - pill.timestamp) < 30 * 60 * 1000);
+      if (match) articles = await api.getSessionArticles(match.sessionId, { category: currentCat });
+    } catch (_) { /* fall through to mock */ }
+    if (!articles.length) {
+      const base = getMockArticles(currentCountry, currentCat);
+      const offset = sessionPills.length - 1 - sessionPills.indexOf(pill);
+      articles = base.map((a, i) => ({ ...a, id: `${a.id}-s${pill.timestamp}` , title: `[${pill.hourLabel} ${pill.dateLabel}] ${a.title}`, rank: ((i + offset) % base.length) + 1 }));
+    }
+    setServerArticles(articles);
+    if (showLoading) setTimeout(() => setIsLoading(false), 250);
+  };
+
+  useEffect(() => {
+    if (!sessionPills.length) return;
+    if (activeSessionIdx === -1 || activeSessionIdx === sessionPills.length - 1) {
+      getLatestArticlesFromServer(true);
+    } else {
+      getArticlesForPill(sessionPills[activeSessionIdx], true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCountry, currentCat, activeSessionIdx]);
 
   useEffect(() => {
     let mounted = true;
@@ -822,14 +881,24 @@ function HomeTimelineView({ isDarkMode, onThemeChange, unreadCount, onNotiIconCl
           <span className="timeline-meta">최대 6세션 · 30시간 보관</span>
         </div>
         <div className="timeline-hours-grid">
-          {sessionPills.map((pill) => (
-            <div key={pill.key} className={`hour-pill ${pill.isNow ? 'current-now' : ''}`}>
-              {pill.hourLabel}<br /><small>{pill.isNow ? '지금' : pill.dateLabel}</small>
-            </div>
-          ))}
+          {sessionPills.map((pill, idx) => {
+            const isActive = idx === effectiveIdx;
+            const isNowPill = idx === sessionPills.length - 1;
+            return (
+              <button
+                type="button"
+                key={pill.key}
+                className={`hour-pill ${isNowPill ? 'current-now' : ''} ${isActive ? 'is-active' : ''}`}
+                onClick={() => handlePillClick(idx)}
+                aria-pressed={isActive}
+              >
+                {pill.hourLabel}<br /><small>{isNowPill ? '지금' : pill.dateLabel}</small>
+              </button>
+            );
+          })}
         </div>
       </div>
-      <div className="session-sub-title">{activeSessionLabel} 세션 · 검색 결과 기사 <span className="right-label">세션당 최대 6개 로드</span></div>
+      <div className="session-sub-title">{activeSessionLabel} 세션{activeIsNow ? ' · 지금' : ` · ${activePill?.dateLabel || ''}`} · 검색 결과 기사 <span className="right-label">세션당 최대 6개 로드</span></div>
       <div className="articles-list">
         {isLoading ? <div className="empty-state">🔄 뉴스브리프 AI 세션 실시간 연동 중...</div> : serverArticles.length === 0 ? <div className="empty-state">📭 선택하신 분야의 실시간 업데이트 뉴스가 없습니다.</div> : serverArticles.map((article, index) => <ArticleCard key={article.id} article={article} rank={index + 1} isScrapped={scraps.some((item) => String(item.articleId ?? item.id) === String(article.id))} onClick={() => onArticleClick(article)} onScrap={() => handleScrapToggle(article)} />)}
       </div>
@@ -899,10 +968,52 @@ function ToggleRow({ title, sub, checked, onChange }) {
   return <div className="toggle-row-item"><div className="toggle-text-info"><strong>{title}</strong><small>{sub}</small></div><label className="switch-input-label"><input type="checkbox" checked={checked} onChange={onChange} /><span className="slider-round" /></label></div>;
 }
 
+const COMMENT_AUTHORS = ['뉴스독자A', '뉴스독자B', '시민기자', '코어유저', '잠수러', '데일리리더', '브리핑팬', '뉴비독자', '인사이트헌터', '아침형인간', '나이트오울', '아키비스트', '큐레이터', '디스커서', '오피니언메이커'];
+const COMMENT_TEMPLATES = [
+  '핵심만 요약돼서 좋네요. 출퇴근길에 빠르게 훑기 좋아요.',
+  '원문 댓글 분위기는 좀 다른데 AI 요약이 균형 잘 잡아준 듯.',
+  '이 기사 트렌드스코어가 왜 높은지 알겠다. 댓글 수가 압도적.',
+  '관련 분야에서 일하는데 현장 체감이랑 거의 일치합니다.',
+  '근거 자료 좀 더 붙여주면 좋겠어요. 단정적 표현이 약간 걸림.',
+  '같은 주제 다른 매체랑 비교해보면 톤이 묘하게 다름.',
+  '진짜 5시간마다 갱신되는 게 신기함. 잘 만든 도구다.',
+  '저는 반대 의견. 데이터 표본이 좀 빈약한 느낌이라.',
+  '북마크하고 주말에 다시 읽어보려고 해요.',
+  '핫이슈 떡밥이라 댓글창 화력 좋네ㅋ',
+  '이 정도 인사이트면 유료여도 볼 만함.',
+  '카테고리 분류가 좀 애매한 듯. 사회랑 정치 경계가 흐릿.',
+  '국가별 비교 차트 같은 거 있으면 좋겠어요.',
+  '요약 bullet 3개 중에 2번째가 핵심이네요.',
+  '관련주 어디 어디일까요? 같이 보고 싶어요.',
+];
+
+function buildMockComments(articleId, total) {
+  const seed = Number(String(articleId).replace(/\D/g, '')) || 7;
+  const safeTotal = Math.max(0, Math.min(Number(total) || 0, 120));
+  const list = [];
+  for (let i = 0; i < safeTotal; i++) {
+    list.push({
+      id: `mock-${articleId}-${i}`,
+      author: COMMENT_AUTHORS[(seed + i) % COMMENT_AUTHORS.length],
+      text: COMMENT_TEMPLATES[(seed * 3 + i) % COMMENT_TEMPLATES.length],
+      time: i < 3 ? `${(i + 1) * 5}분 전` : i < 10 ? `${i}시간 전` : `${Math.ceil(i / 6)}일 전`,
+    });
+  }
+  return list;
+}
+
+const COMMENT_PAGE_SIZE = 5;
+
 function ArticleDetailModal({ article, onClose, isDarkMode }) {
   const [detail, setDetail] = useState(article);
   const [comments, setComments] = useState(DEFAULT_COMMENTS[article.id] || []);
   const [isLoading, setIsLoading] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(COMMENT_PAGE_SIZE);
+  const [serverHasMore, setServerHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [sortMode, setSortMode] = useState('likes');
+
+  const totalReported = Math.max(comments.length, Number(detail.replies) || 0);
 
   useEffect(() => {
     let mounted = true;
@@ -921,13 +1032,56 @@ function ArticleDetailModal({ article, onClose, isDarkMode }) {
     return () => { mounted = false; };
   }, [article.id]);
 
+  const handleLoadMore = async () => {
+    if (isFetchingMore) return;
+    setIsFetchingMore(true);
+    let appended = [];
+    if (serverHasMore) {
+      try {
+        const nextPage = Math.floor(visibleCount / COMMENT_PAGE_SIZE) + 1;
+        const fetched = await apiClient.get(`/news/${article.id}/comments`, { params: { page: nextPage, per_page: COMMENT_PAGE_SIZE, sort: sortMode } })
+          .then((res) => unwrap(res.data))
+          .catch(() => null);
+        if (Array.isArray(fetched) && fetched.length) {
+          appended = fetched.map((item, idx) => ({
+            id: item.id ?? item.comment_id ?? `srv-${nextPage}-${idx}`,
+            author: item.author ?? item.writer ?? item.nickname ?? '익명',
+            text: item.text ?? item.content ?? item.body ?? '',
+            time: item.time ?? item.created_at ?? item.createdAt ?? '방금',
+          }));
+        } else {
+          setServerHasMore(false);
+        }
+      } catch (_) {
+        setServerHasMore(false);
+      }
+    }
+    if (!appended.length) {
+      const needed = Math.min(COMMENT_PAGE_SIZE, Math.max(0, totalReported - comments.length));
+      if (needed > 0) {
+        const pool = buildMockComments(article.id, totalReported);
+        appended = pool.slice(comments.length, comments.length + needed);
+      }
+    }
+    if (appended.length) {
+      setComments((prev) => [...prev, ...appended]);
+      setVisibleCount((prev) => prev + appended.length);
+    } else {
+      setVisibleCount((prev) => Math.min(prev + COMMENT_PAGE_SIZE, comments.length));
+    }
+    setIsFetchingMore(false);
+  };
+
+  const visibleComments = comments.slice(0, visibleCount);
+  const hasMoreToShow = visibleComments.length < totalReported;
+
   const openOriginal = () => {
     if (detail.originalUrl) window.open(detail.originalUrl, '_blank', 'noopener,noreferrer');
     else alert('원문 링크가 아직 연결되지 않았습니다.');
   };
 
   return (
-    <div className="modal-screen-overlay" onClick={onClose}><div className={`modal-main-window ${isDarkMode ? 'dark-mode-app' : ''}`} onClick={(e) => e.stopPropagation()}><div className="modal-top-bar"><button className="modal-back-arrow" onClick={onClose}>← 14:00 세션으로</button><div className="modal-top-right-btns"><button>🔖</button><button>↗</button></div></div><div className="modal-scroll-area">{isLoading && <div className="modal-loading">상세 정보를 불러오는 중...</div>}<div className="modal-meta-row"><span className="modal-cat-tag">{detail.category}</span><span>{detail.source} · 브리핑</span></div><h1 className="modal-article-title">{detail.title}</h1><button className="original-link-banner" onClick={openOriginal}><span className="naver-icon">N</span><strong>원문 기사 보기</strong><small>{detail.source}</small></button><div className="ai-summary-container-box"><div className="ai-box-title">✨ AI 요약 <span className="ai-speed-tag">세션 기반 자동 요약</span></div><ul className="ai-bullet-points">{(detail.bullets || []).map((bullet, idx) => <li key={idx}>{bullet}</li>)}<li>해당 분야의 최신 세션 핵심 브리핑입니다.</li></ul></div><section className="comments-section"><div className="comments-section-title-row"><strong>💬 댓글 ({comments.length + (detail.replies || 0)})</strong><span>인기순 · 최신순</span></div>{comments.map((comment) => <div key={comment.id} className="comment-row-item"><div className="comment-user-meta-row"><strong>{comment.author}</strong><span>{comment.time}</span></div><p className="comment-text-body">{comment.text}</p></div>)}<button className="more-comments-dashed-btn">댓글 더보기</button></section></div><div className="modal-bottom-notice-bar"><span>출처: {detail.source}</span><span>다음 갱신 예정 세션에 자동 반영</span></div></div></div>
+    <div className="modal-screen-overlay" onClick={onClose}><div className={`modal-main-window ${isDarkMode ? 'dark-mode-app' : ''}`} onClick={(e) => e.stopPropagation()}><div className="modal-top-bar"><button className="modal-back-arrow" onClick={onClose}>← 14:00 세션으로</button><div className="modal-top-right-btns"><button>🔖</button><button>↗</button></div></div><div className="modal-scroll-area">{isLoading && <div className="modal-loading">상세 정보를 불러오는 중...</div>}<div className="modal-meta-row"><span className="modal-cat-tag">{detail.category}</span><span>{detail.source} · 브리핑</span></div><h1 className="modal-article-title">{detail.title}</h1><button className="original-link-banner" onClick={openOriginal}><span className="naver-icon">N</span><strong>원문 기사 보기</strong><small>{detail.source}</small></button><div className="ai-summary-container-box"><div className="ai-box-title">✨ AI 요약 <span className="ai-speed-tag">세션 기반 자동 요약</span></div><ul className="ai-bullet-points">{(detail.bullets || []).map((bullet, idx) => <li key={idx}>{bullet}</li>)}<li>해당 분야의 최신 세션 핵심 브리핑입니다.</li></ul></div><section className="comments-section"><div className="comments-section-title-row"><strong>💬 댓글 ({totalReported})</strong><span className="comment-sort-tabs"><button type="button" className={sortMode === 'likes' ? 'is-active' : ''} onClick={() => setSortMode('likes')}>인기순</button><span>·</span><button type="button" className={sortMode === 'recent' ? 'is-active' : ''} onClick={() => setSortMode('recent')}>최신순</button></span></div>{visibleComments.length === 0 ? <div className="comment-empty-state">아직 표시할 댓글이 없습니다. <strong>댓글 더보기</strong>를 눌러 불러올 수 있어요.</div> : visibleComments.map((comment) => <div key={comment.id} className="comment-row-item"><div className="comment-user-meta-row"><strong>{comment.author}</strong><span>{comment.time}</span></div><p className="comment-text-body">{comment.text}</p></div>)}{hasMoreToShow && <button type="button" className="more-comments-dashed-btn" onClick={handleLoadMore} disabled={isFetchingMore}>{isFetchingMore ? '불러오는 중…' : `댓글 더보기 (${Math.max(0, totalReported - visibleComments.length)}개 남음)`}</button>}</section></div><div className="modal-bottom-notice-bar"><span>출처: {detail.source}</span><span>다음 갱신 예정 세션에 자동 반영</span></div></div></div>
   );
 }
 
