@@ -281,6 +281,40 @@ function getTodayFormattedDate() {
   return `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일 · ${dayNames[today.getDay()]}`;
 }
 
+const KST_SESSION_HOURS = [0, 5, 9, 14, 19];
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function relativeDayLabel(slot, now) {
+  const slotMidnight = new Date(slot.getFullYear(), slot.getMonth(), slot.getDate()).getTime();
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const diffDays = Math.round((todayMidnight - slotMidnight) / 86400000);
+  if (diffDays === 0) return '오늘';
+  if (diffDays === 1) return '어제';
+  if (diffDays === 2) return '그저께';
+  return `${diffDays}일 전`;
+}
+
+function calcSessionPills(now = new Date(), count = 6) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const candidates = [];
+  for (let d = -2; d <= 0; d++) {
+    for (const h of KST_SESSION_HOURS) {
+      const slot = new Date(today.getTime() + d * 86400000);
+      slot.setHours(h, 0, 0, 0);
+      if (slot.getTime() <= now.getTime()) candidates.push(slot);
+    }
+  }
+  candidates.sort((a, b) => b.getTime() - a.getTime());
+  return candidates.slice(0, count).reverse().map((slot, idx, arr) => ({
+    key: slot.toISOString(),
+    hourLabel: `${pad2(slot.getHours())}:00`,
+    dateLabel: relativeDayLabel(slot, now),
+    isNow: idx === arr.length - 1,
+    timestamp: slot.getTime(),
+  }));
+}
+
 function formatRemainingTime(totalMinutes) {
   const value = Number(totalMinutes ?? 0);
   if (value <= 0) return '0분 (새 브리핑 동기화 중)';
@@ -722,6 +756,16 @@ function HomeTimelineView({ isDarkMode, onThemeChange, unreadCount, onNotiIconCl
   const [isLoading, setIsLoading] = useState(false);
   const [minutesUntilNext, setMinutesUntilNext] = useState(134);
   const [lastCrawlingTime, setLastCrawlingTime] = useState('14:00');
+  const [sessionPills, setSessionPills] = useState(() => calcSessionPills());
+
+  useEffect(() => {
+    const recompute = () => setSessionPills(calcSessionPills());
+    recompute();
+    const timer = setInterval(recompute, 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const activeSessionLabel = sessionPills.length ? sessionPills[sessionPills.length - 1].hourLabel : '14:00';
 
   const getLatestArticlesFromServer = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
@@ -772,8 +816,20 @@ function HomeTimelineView({ isDarkMode, onThemeChange, unreadCount, onNotiIconCl
       <div className="date-heading">{getTodayFormattedDate()}</div>
       <h1 className="main-page-title">오늘의 브리핑</h1>
       <div className="category-chips">{CATEGORY_OPTIONS.map((cat) => <button key={cat.key} className={currentCat === cat.key ? 'active' : ''} onClick={() => setCurrentCat(cat.key)}>{cat.label}</button>)}</div>
-      <div className="session-timeline-box"><div className="timeline-header"><span>🕒 세션 타임라인 <small>{currentCountry.toUpperCase()} × {currentCat.toUpperCase()}</small></span><span className="timeline-meta">최대 6세션 · 30시간 보관</span></div><div className="timeline-hours-grid">{['어제 14:00', '어제 19:00', '오늘 00:00', '오늘 05:00', '오늘 09:00'].map((time) => <div key={time} className="hour-pill">{time.split(' ')[1]}<br /><small>{time.split(' ')[0]}</small></div>)}<div className="hour-pill current-now">14:00<br /><small>지금</small></div></div></div>
-      <div className="session-sub-title">14:00 세션 · 검색 결과 기사 <span className="right-label">세션당 최대 6개 로드</span></div>
+      <div className="session-timeline-box">
+        <div className="timeline-header">
+          <span>🕒 세션 타임라인 <small>{currentCountry.toUpperCase()} × {currentCat.toUpperCase()}</small></span>
+          <span className="timeline-meta">최대 6세션 · 30시간 보관</span>
+        </div>
+        <div className="timeline-hours-grid">
+          {sessionPills.map((pill) => (
+            <div key={pill.key} className={`hour-pill ${pill.isNow ? 'current-now' : ''}`}>
+              {pill.hourLabel}<br /><small>{pill.isNow ? '지금' : pill.dateLabel}</small>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="session-sub-title">{activeSessionLabel} 세션 · 검색 결과 기사 <span className="right-label">세션당 최대 6개 로드</span></div>
       <div className="articles-list">
         {isLoading ? <div className="empty-state">🔄 뉴스브리프 AI 세션 실시간 연동 중...</div> : serverArticles.length === 0 ? <div className="empty-state">📭 선택하신 분야의 실시간 업데이트 뉴스가 없습니다.</div> : serverArticles.map((article, index) => <ArticleCard key={article.id} article={article} rank={index + 1} isScrapped={scraps.some((item) => String(item.articleId ?? item.id) === String(article.id))} onClick={() => onArticleClick(article)} onScrap={() => handleScrapToggle(article)} />)}
       </div>
