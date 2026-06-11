@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import './App.css';
+import './globe.css';
 
 const AXIOS_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 const AUTH_BASE_URL = AXIOS_BASE_URL.replace(/\/api\/v1\/?$/, '') + '/api/auth';
@@ -870,7 +871,7 @@ function App() {
         {view === 'step2' && <CountryStep selectedCountries={selectedCountries} toggleCountry={toggleCountry} isAnyCountrySelected={isAnyCountrySelected} onPrev={() => setView('onboarding')} onNext={() => setView('step3')} />}
         {view === 'step3' && <CategoryStep selectedCategories={selectedCategories} toggleCategory={toggleCategory} isAnyCategorySelected={isAnyCategorySelected} onPrev={() => setView('step2')} onNext={() => setView('step4')} />}
         {view === 'step4' && <NotificationStep notificationSettings={notificationSettings} setNotificationSettings={setNotificationSettings} onPrev={() => setView('step3')} onFinish={handleFinishOnboarding} />}
-        {view === 'home' && <HomeTimelineView isDarkMode={isDarkMode} onThemeChange={handleThemeChange} unreadCount={unreadCount} onNotiIconClick={() => setView('notification')} onProfileClick={() => setView('setting')} onArticleClick={setSelectedArticle} handleScrapToggle={handleScrapToggle} scraps={scraps} apiHealth={apiHealth} />}
+        {view === 'home' && <HomeExperience isDarkMode={isDarkMode} onThemeChange={handleThemeChange} unreadCount={unreadCount} onNotiIconClick={() => setView('notification')} onProfileClick={() => setView('setting')} onArticleClick={setSelectedArticle} handleScrapToggle={handleScrapToggle} scraps={scraps} apiHealth={apiHealth} selectedCountries={selectedCountries} />}
         {view === 'scrap' && <ScrapView folders={folders} scraps={currentFolderScraps} totalScraps={scraps.length} activeFolderId={activeFolderId} activeFolderName={activeFolderName} visibleScrapCount={visibleScrapCount} setVisibleScrapCount={setVisibleScrapCount} setActiveFolderId={setActiveFolderId} handleAddFolder={handleAddFolder} handleDeleteFolder={handleDeleteFolder} handleMoveArticleFolder={handleMoveArticleFolder} onArticleClick={setSelectedArticle} />}
         {view === 'notification' && <NotificationCenterView notifications={notifications} unreadCount={unreadCount} onMarkAllRead={markAllAsRead} onNotificationClick={async (noti) => { await markOneAsRead(noti); if (noti.articleId) setSelectedArticle({ id: noti.articleId }); }} />}
         {view === 'setting' && <MyPageView isDarkMode={isDarkMode} onThemeChange={handleThemeChange} profile={profile} selectedCountries={selectedCountries} selectedCategories={selectedCategories} editCountries={editCountries} setEditCountries={setEditCountries} editCategories={editCategories} setEditCategories={setEditCategories} isEditMode={isEditMode} setIsEditMode={setIsEditMode} handleSaveSubscription={handleSaveSubscription} tickerInput={tickerInput} setTickerInput={setTickerInput} investmentTickers={investmentTickers} setInvestmentTickers={setInvestmentTickers} handleAddTicker={handleAddTicker} notificationSettings={notificationSettings} setNotificationSettings={setNotificationSettings} handleLogout={handleLogout} handleAccountDelete={handleAccountDelete} />}
@@ -1092,8 +1093,155 @@ function NotificationStep({ notificationSettings, setNotificationSettings, onPre
   );
 }
 
-function HomeTimelineView({ isDarkMode, onThemeChange, unreadCount, onNotiIconClick, onProfileClick, onArticleClick, handleScrapToggle, scraps, apiHealth }) {
-  const [currentCountry, setCurrentCountry] = useState('kr');
+// 지구본(2050.earth 스타일) → 국가 선택 시 해당 국가 뉴스 타임라인으로 진입
+function HomeExperience(props) {
+  const [globeCountry, setGlobeCountry] = useState(null);
+  if (!globeCountry) {
+    return (
+      <GlobeLandingView
+        selectedCountries={props.selectedCountries}
+        isDarkMode={props.isDarkMode}
+        onThemeChange={props.onThemeChange}
+        unreadCount={props.unreadCount}
+        onNotiIconClick={props.onNotiIconClick}
+        onProfileClick={props.onProfileClick}
+        onSelectCountry={(key) => setGlobeCountry(key)}
+      />
+    );
+  }
+  return (
+    <HomeTimelineView
+      {...props}
+      initialCountry={globeCountry}
+      onBackToGlobe={() => setGlobeCountry(null)}
+    />
+  );
+}
+
+// 각 국가 핀의 지구본 표면 좌표(%)와 메타. left/top은 글로브 박스 기준 위치.
+const GLOBE_HOTSPOTS = [
+  { key: 'kr', label: '한국', sub: 'KOREA', flag: '🇰🇷', source: '네이버 뉴스', x: 78, y: 40, accent: '#5ad1ff' },
+  { key: 'us', label: '미국', sub: 'USA', flag: '🇺🇸', source: 'CNN', x: 24, y: 38, accent: '#ff7a9c' },
+  { key: 'jp', label: '일본', sub: 'JAPAN', flag: '🇯🇵', source: '야후재팬', x: 85, y: 46, accent: '#ffd166' },
+];
+
+function GlobeLandingView({ selectedCountries, isDarkMode, onThemeChange, unreadCount, onNotiIconClick, onProfileClick, onSelectCountry }) {
+  const [hovered, setHovered] = useState(null);
+  const [entering, setEntering] = useState(null);
+  const stars = React.useMemo(
+    () => Array.from({ length: 70 }, (_, i) => ({
+      id: i,
+      top: Math.random() * 100,
+      left: Math.random() * 100,
+      size: Math.random() * 2 + 0.5,
+      delay: (Math.random() * 4).toFixed(2),
+      dur: (Math.random() * 3 + 2).toFixed(2),
+    })),
+    []
+  );
+
+  const handlePick = (key) => {
+    setEntering(key);
+    setTimeout(() => onSelectCountry(key), 520);
+  };
+
+  return (
+    <div className={`globe-cosmos ${entering ? 'is-warping' : ''}`}>
+      <div className="cosmos-stars" aria-hidden>
+        {stars.map((s) => (
+          <span key={s.id} className="cosmos-star" style={{ top: `${s.top}%`, left: `${s.left}%`, width: `${s.size}px`, height: `${s.size}px`, animationDelay: `${s.delay}s`, animationDuration: `${s.dur}s` }} />
+        ))}
+      </div>
+
+      <div className="cosmos-topbar">
+        <div className="cosmos-brand"><span className="cosmos-brand-dot" /> NEWSBRIEF<span className="cosmos-brand-year"> · 2050</span></div>
+        <div className="cosmos-top-actions">
+          <button className="cosmos-icon-btn" onClick={() => onThemeChange(!isDarkMode)} title="테마">{isDarkMode ? '☀️' : '🌙'}</button>
+          <button className="cosmos-icon-btn" onClick={onNotiIconClick} title="알림">🔔{unreadCount > 0 && <span className="cosmos-badge">{unreadCount}</span>}</button>
+          <button className="cosmos-icon-btn" onClick={onProfileClick} title="마이페이지">민</button>
+        </div>
+      </div>
+
+      <div className="cosmos-headline">
+        <p className="cosmos-eyebrow">실시간 글로벌 브리핑</p>
+        <h1 className="cosmos-title">지구의 <span>지금</span>을 클릭하세요</h1>
+        <p className="cosmos-sub">지구본 위 빛나는 지역을 선택하면 그 나라의 최신 뉴스 세션이 열립니다.</p>
+      </div>
+
+      <div className="globe-stage">
+        <div className="globe-orbit-ring" />
+        <div className="globe-orbit-ring ring-2" />
+        <div className="globe-sphere">
+          <div className="globe-glow" />
+          <div className="globe-grid">
+            <svg viewBox="0 0 200 200" className="globe-wire" aria-hidden>
+              <defs>
+                <radialGradient id="oceanGrad" cx="38%" cy="32%" r="75%">
+                  <stop offset="0%" stopColor="#13406e" />
+                  <stop offset="55%" stopColor="#0a2347" />
+                  <stop offset="100%" stopColor="#04101f" />
+                </radialGradient>
+              </defs>
+              <circle cx="100" cy="100" r="96" fill="url(#oceanGrad)" stroke="rgba(120,200,255,0.35)" strokeWidth="0.8" />
+              {/* 위도선 */}
+              {[20, 40, 60, 80, 100, 120, 140, 160, 180].map((cy, i) => (
+                <ellipse key={`lat-${i}`} cx="100" cy="100" rx="96" ry={Math.max(4, 96 - Math.abs(100 - cy) * 0.96)} fill="none" stroke="rgba(120,200,255,0.14)" strokeWidth="0.6" transform={`translate(0 ${cy - 100})`} />
+              ))}
+              {/* 경도선(회전) */}
+              <g className="globe-meridians">
+                {[12, 28, 44, 60, 76, 92].map((rx, i) => (
+                  <ellipse key={`lon-${i}`} cx="100" cy="100" rx={rx} ry="96" fill="none" stroke="rgba(120,200,255,0.12)" strokeWidth="0.6" />
+                ))}
+              </g>
+            </svg>
+          </div>
+
+          {GLOBE_HOTSPOTS.map((spot) => {
+            const subscribed = selectedCountries?.[spot.key];
+            return (
+              <button
+                key={spot.key}
+                className={`globe-pin ${hovered === spot.key ? 'is-hover' : ''} ${subscribed ? 'is-subscribed' : ''}`}
+                style={{ left: `${spot.x}%`, top: `${spot.y}%`, '--pin-accent': spot.accent }}
+                onMouseEnter={() => setHovered(spot.key)}
+                onMouseLeave={() => setHovered(null)}
+                onClick={() => handlePick(spot.key)}
+                aria-label={`${spot.label} 뉴스 열기`}
+              >
+                <span className="pin-pulse" />
+                <span className="pin-core" />
+                <span className="pin-tip">
+                  <strong>{spot.flag} {spot.label}</strong>
+                  <small>{spot.source}</small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="globe-country-dock">
+        {GLOBE_HOTSPOTS.map((spot) => (
+          <button
+            key={spot.key}
+            className={`dock-chip ${hovered === spot.key ? 'is-hover' : ''}`}
+            style={{ '--pin-accent': spot.accent }}
+            onMouseEnter={() => setHovered(spot.key)}
+            onMouseLeave={() => setHovered(null)}
+            onClick={() => handlePick(spot.key)}
+          >
+            <span className="dock-flag">{spot.flag}</span>
+            <span className="dock-meta"><strong>{spot.label}</strong><small>{spot.sub}</small></span>
+            <span className="dock-arrow">→</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HomeTimelineView({ isDarkMode, onThemeChange, unreadCount, onNotiIconClick, onProfileClick, onArticleClick, handleScrapToggle, scraps, apiHealth, initialCountry = 'kr', onBackToGlobe }) {
+  const [currentCountry, setCurrentCountry] = useState(initialCountry);
   const [currentCat, setCurrentCat] = useState('all');
   const [serverArticles, setServerArticles] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -1186,7 +1334,7 @@ function HomeTimelineView({ isDarkMode, onThemeChange, unreadCount, onNotiIconCl
   return (
     <div className="home-container">
       <div className="home-header">
-        <div className="logo-section">📑 <span>뉴스브리프</span></div>
+        <div className="logo-section">{onBackToGlobe ? <button className="globe-back-btn" onClick={onBackToGlobe} title="지구본으로 돌아가기">🌐</button> : '📑'} <span>뉴스브리프</span></div>
         <div className="country-tabs">{COUNTRY_OPTIONS.map((country) => <button key={country.key} className={currentCountry === country.key ? 'active' : ''} onClick={() => { setCurrentCountry(country.key); setCurrentCat('all'); }}>{country.flag} {country.label}</button>)}</div>
         <div className="header-right-icons">
           <button className="theme-toggle-icon" onClick={() => onThemeChange(!isDarkMode)}>{isDarkMode ? '☀️' : '🌙'}</button>
